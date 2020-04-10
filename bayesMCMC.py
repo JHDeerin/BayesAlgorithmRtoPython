@@ -1,5 +1,5 @@
 '''
-Implements a basic MCMC Bayesian algorithm to sample means/standard deviations from a dataset with binary categories
+Implements a basic MCMC Bayesian algorithm to sample means/standard deviations from a dataset with binary categories, and to estimate which categories unknown datapoints should fall under
 TODO: Verify the above intent is correct (via Mat)
 
 This rewrite doesn't attempt to refactor the code structurally or significantly increase performance, and is instead meant to be a fairly close 1:1 conversion of Mat's original R script into python
@@ -53,8 +53,8 @@ beta_1 = 0.001
 hidden_variables[0,:] = np.random.choice([0, 1], size=(num_samples))
 
 # Mark known variables with the correct category
-hidden_variables[0, np.where(df_data_observed['status'] == 0)] = 0
-hidden_variables[0, np.where(df_data_observed['status'] == 1)] = 1
+hidden_variables[0, df_data_observed['status'] == 0] = 0
+hidden_variables[0, df_data_observed['status'] == 1] = 1
 
 # Get measurement data for both categories
 status_0_measures = df_data_observed.loc[df_data_observed['status'] == 0]['measure']
@@ -105,26 +105,28 @@ for i in range(1, max_iterations):
     likelihood_ratio = np.zeros(num_samples)
     hidden_variables_new = hidden_variables_old[:]
 
-    # TODO: This section down currently accounts for ~3/4 of the runtime; benchmark why?
+    # TODO: This section down currently accounts for ~3/4 of the runtime; benchmark why, and if it can be improved?
+    old_0_indices = hidden_variables_old == 0
+    old_1_indices = hidden_variables_old == 1
     # Calculate likelihood ratios P(Data | New guess) / P(Data | Old guess)
-    likelihood_ratio[hidden_variables_old == 0] = (
-        sp.norm.pdf(all_data_measures[hidden_variables_old==0], avg1_new, sd1_new)
-        / sp.norm.pdf(all_data_measures[hidden_variables_old==0], avg0_new, sd0_new))
+    likelihood_ratio[old_0_indices] = (
+        sp.norm.pdf(all_data_measures[old_0_indices], avg1_new, sd1_new)
+        / sp.norm.pdf(all_data_measures[old_0_indices], avg0_new, sd0_new))
 
-    likelihood_ratio[hidden_variables_old == 1] = (
-        sp.norm.pdf(all_data_measures[hidden_variables_old==1], avg0_new, sd0_new)
-        / sp.norm.pdf(all_data_measures[hidden_variables_old==1], avg1_new, sd1_new))
+    likelihood_ratio[old_1_indices] = (
+        sp.norm.pdf(all_data_measures[old_1_indices], avg0_new, sd0_new)
+        / sp.norm.pdf(all_data_measures[old_1_indices], avg1_new, sd1_new))
 
     # Generate num_sample uniform samples between 0 and 1
     # TODO: What does 'z' represent?
     z = np.random.choice([0, 1], size=(num_samples))
 
     # If z < likelihood ratio, accept the new state; otherwise, keep the old
-    hidden_variables_new[z < likelihood_ratio] = 1 - hidden_variables_old[z<likelihood_ratio]
+    hidden_variables_new[z < likelihood_ratio] = 1 - hidden_variables_old[z < likelihood_ratio]
 
     # For points that are definitely known, keep the observed values
-    hidden_variables_new[np.where(df_data_observed['status'] == 0)] = 0
-    hidden_variables_new[np.where(df_data_observed['status'] == 1)] = 1
+    hidden_variables_new[df_data_observed['status'] == 0] = 0
+    hidden_variables_new[df_data_observed['status'] == 1] = 1
 
     parameter_estimates[i, :] = [avg0_new, sd0_new, avg1_new, sd1_new]
     hidden_variables[i, :] = hidden_variables_new
